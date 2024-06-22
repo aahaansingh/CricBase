@@ -185,120 +185,186 @@ class DataRead :
         """
         Extracts scorecard data for each player in each match, inserting it into the database
         object's player_match_df.
-        Will try to break this up into constituent methods.
-        """    
-        # Runs Scored
-        runs_scored = self.delivery_df[["season", "match_number", "batter", "runs"]].groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).sum()
-        self.player_match_df = self.player_match_df.merge(runs_scored, how="left", left_on=["season", "match_number", "player_id"], right_on=["season", "match_number", "batter"])
-        self.player_match_df = self.player_match_df.rename(columns={"runs":"runs_scored"})
+        """
+        full_extra_df = self.delivery.merge(self.extras, on=["season", "match_number", "team_batting", "over", "number"])
+        full_wickets_df = self.delivery.merge(self.wickets, on=["season", "match_number", "team_batting", "over", "number"])
+        get_runs_scored(self)
+        get_runs_conceded(self, full_extra_df)
+        get_fours_sixes_data(self)
+        get_balls_faced(self, full_extra_df)
+        get_extras_delivered(self, full_extra_df)
+        get_num_wickets(self, full_wickets_df)
+        get_batsman_out(self, full_wickets_df)
+        get_batting_position(self)
 
-        # Runs Conceded
-        full_extra_df = self.delivery_df.merge(self.extra_df, on=["season", "match_number", "team_batting", "over", "number"])
-        runs_conceded = self.delivery_df[["season", "match_number", "bowler", "runs"]].groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).sum()
-        all_extras_conceded = full_extra_df[["season", "match_number", "bowler", "byes", "legbyes", "noballs", "penalty", "wides"]].groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).sum()
-        all_wides_noballs_conceded = all_extras_conceded[["season", "match_number", "bowler", "wides", "noballs"]]
-        all_runs_conceded = runs_conceded.merge(all_wides_noballs_conceded, on=["season", "match_number", "bowler"], how="left")
-        all_runs_conceded["runs_conceded"] = all_runs_conceded[["runs", "wides", "noballs"]].sum(axis=1)# sum on the hor axis
-        self.player_match_df = self.player_match_df.merge(all_runs_conceded[["season", "match_number", "bowler", "runs_conceded", "wides", "noballs"]], 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "bowler"])
-        self.player_match_df = self.player_match_df.drop(["bowler", "batter"], axis=1)
-
-        all_fours = self.delivery_df.loc[np.where(self.delivery_df["runs"] == 4)] # yes, I know that they can be run
-        all_sixes = self.delivery_df.loc[np.where(self.delivery_df["runs"] == 6)]
-
-        # Fours/Sixes Scored/Conceded
-        fours_scored = all_fours[["season", "match_number", "batter", "runs"]].groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
-        fours_scored = fours_scored.rename(columns={"runs":"fours_scored"})
-        sixes_scored = all_sixes[["season", "match_number", "batter", "runs"]].groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
-        sixes_scored = sixes_scored.rename(columns={"runs":"sixes_scored"})
-        fours_conceded = all_fours[["season", "match_number", "bowler", "runs"]].groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
-        fours_conceded = fours_conceded.rename(columns={"runs":"fours_conceded"})
-        sixes_conceded = all_sixes[["season", "match_number", "bowler", "runs"]].groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
-        sixes_conceded = sixes_conceded.rename(columns={"runs":"sixes_conceded"})
-
-        self.player_match_df = self.player_match_df.merge(fours_scored, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
+def get_runs_scored(self) :
+    """Gets the runs scored by each batsman in each match, adding this to player_match."""
+    # The runs scored per ball corresponds directly to the runs field of each delivery
+    runs_scored = self.delivery[["season", "match_number", "batter", "runs"]]\
+        .groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).sum()
+    self.player_match = self.player_match.merge(runs_scored, how="left", 
+                                                left_on=["season", "match_number", "player_id"], 
                                                 right_on=["season", "match_number", "batter"])
-        self.player_match_df = self.player_match_df.merge(fours_conceded, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "bowler"])
-        self.player_match_df = self.player_match_df.drop(["bowler", "batter"], axis=1)
+    self.player_match = self.player_match.rename(columns={"runs":"runs_scored"})
 
-        self.player_match_df = self.player_match_df.merge(sixes_scored, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "batter"])
-        self.player_match_df = self.player_match_df.merge(sixes_conceded, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "bowler"])
-        self.player_match_df = self.player_match_df.drop(["bowler", "batter"], axis=1)
+def get_runs_conceded(self, full_extra_df) :
+    """
+    Gets the runs conceded by each bowler in each match, adding this to player_match.
+    
+    Arguments: 
+        full_extra_df: extra_df inner joined with delivery_df
+    """
+    runs_conceded = self.delivery[["season", "match_number", "bowler", "runs"]]\
+        .groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).sum()
+    all_extras_conceded = full_extra_df[["season", "match_number", "bowler", "byes", "legbyes", "noballs", "penalty", "wides"]]\
+        .groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).sum()
+    all_wides_noballs_conceded = all_extras_conceded[["season", "match_number", "bowler", "wides", "noballs"]]
+    all_runs_conceded = runs_conceded.merge(all_wides_noballs_conceded, 
+                                            on=["season", "match_number", "bowler"], 
+                                            how="left")
+    all_runs_conceded["runs_conceded"] = all_runs_conceded[["runs", "wides", "noballs"]].sum(axis=1)# sum on the hor axis
+    self.player_match = self.player_match.merge(all_runs_conceded[["season", "match_number", "bowler", "runs_conceded", "wides", "noballs"]], 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "bowler"])
+    self.player_match = self.player_match.drop(["bowler", "batter"], axis=1)
+    
+def get_fours_sixes_data(self) :
+    """Gets the fours and sixes scored/conceded by each player in each match."""
+    # Unfortunately CricSheet data doesn't distinguish between boundaries and run fours/sixes
+    all_fours = self.delivery.loc[np.where(self.delivery["runs"] == 4)]
+    all_sixes = self.delivery.loc[np.where(self.delivery["runs"] == 6)]
 
-        # Number of Balls Faced
-        total_balls_faced = self.delivery_df[["season", "match_number", "batter", "runs"]].groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
-        total_balls_faced = total_balls_faced.rename(columns={"runs":"balls_faced"})
-        wides_faced = full_extra_df[["season", "match_number", "batter", "wides"]].loc[np.where(full_extra_df["wides"] > 0)]
-        noballs_faced = full_extra_df[["season", "match_number", "batter", "noballs"]].loc[np.where(full_extra_df["noballs"] > 0)]
-        total_wides_faced = wides_faced.groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
-        total_noballs_faced = noballs_faced.groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
-        total_balls_faced = total_balls_faced.merge(total_wides_faced, how="left", on=["season", "match_number", "batter"])
-        total_balls_faced = total_balls_faced.merge(total_noballs_faced, how="left", on=["season", "match_number", "batter"])
-        total_balls_faced = total_balls_faced.fillna(0)
-        total_balls_faced["balls_faced"] -= total_balls_faced["wides"] + total_balls_faced["noballs"]
-        total_balls_faced = total_balls_faced.drop(["wides", "noballs"], axis=1)
-        self.player_match_df = self.player_match_df.merge(total_balls_faced, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "batter"])
-        self.player_match_df = self.player_match_df.drop(["batter"], axis=1)
+    fours_scored = all_fours[["season", "match_number", "batter", "runs"]]\
+        .groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
+    fours_scored = fours_scored.rename(columns={"runs":"fours_scored"})
+    sixes_scored = all_sixes[["season", "match_number", "batter", "runs"]]\
+        .groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
+    sixes_scored = sixes_scored.rename(columns={"runs":"sixes_scored"})
+    fours_conceded = all_fours[["season", "match_number", "bowler", "runs"]]\
+        .groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
+    fours_conceded = fours_conceded.rename(columns={"runs":"fours_conceded"})
+    sixes_conceded = all_sixes[["season", "match_number", "bowler", "runs"]]\
+        .groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
+    sixes_conceded = sixes_conceded.rename(columns={"runs":"sixes_conceded"})
 
-        # Number of Balls, No Balls, Wides Delivered
-        total_balls_delivered = self.delivery_df[["season", "match_number", "bowler", "runs"]].groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
-        total_balls_delivered = total_balls_delivered.rename(columns={"runs":"balls_delivered"})
-        wides_delivered = full_extra_df[["season", "match_number", "bowler", "wides"]].loc[np.where(full_extra_df["wides"] > 0)]
-        noballs_delivered = full_extra_df[["season", "match_number", "bowler", "noballs"]].loc[np.where(full_extra_df["noballs"] > 0)]
-        total_wides_delivered = wides_delivered.groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
-        total_noballs_delivered = noballs_delivered.groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
-        total_balls_delivered = total_balls_delivered.merge(total_wides_delivered, how="left", on=["season", "match_number", "bowler"])
-        total_balls_delivered = total_balls_delivered.merge(total_noballs_delivered, how="left", on=["season", "match_number", "bowler"])
-        total_balls_delivered = total_balls_delivered.fillna(0)
-        total_balls_delivered["balls_delivered"] -= total_balls_delivered["wides"] + total_balls_delivered["noballs"]
-        total_balls_delivered = total_balls_delivered.drop(["wides", "noballs"], axis=1)
-        self.player_match_df = self.player_match_df.merge(total_balls_delivered, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "bowler"])
-        self.player_match_df = self.player_match_df.drop(["bowler"], axis=1)
+    self.player_match = self.player_match.merge(fours_scored, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "batter"])
+    self.player_match = self.player_match.merge(fours_conceded, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "bowler"])
+    self.player_match = self.player_match.drop(["bowler", "batter"], axis=1)
 
-        # Number of Wickets
-        full_wickets_df = self.delivery_df.merge(self.wicket_df, on=["season", "match_number", "team_batting", "over", "number"])
-        bowler_wickets = full_wickets_df.loc[np.where(full_wickets_df["type"] != "run out")]
-        wickets_taken = bowler_wickets[["season", "match_number", "bowler", "wickets"]].groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
-        self.player_match_df = self.player_match_df.merge(wickets_taken, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "bowler"])
-        self.player_match_df = self.player_match_df.drop(["bowler"], axis=1)
+    self.player_match = self.player_match.merge(sixes_scored, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "batter"])
+    self.player_match = self.player_match.merge(sixes_conceded, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "bowler"])
+    self.player_match = self.player_match.drop(["bowler", "batter"], axis=1)
 
-        # Batsman Not-Out
-        batsman_out = full_wickets_df[["season", "match_number", "player_out", "wickets"]].groupby(by=["season", "match_number", "player_out"], sort=False, as_index=False).count()
-        batsman_out = batsman_out.rename(columns={"wickets":"out"})
-        batsman_out["out"] = True
-        self.player_match_df = self.player_match_df.merge(batsman_out, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "player_out"])
-        self.player_match_df = self.player_match_df.drop(["player_out"], axis=1)
-        self.player_match_df["out"] = self.player_match_df["out"].fillna(False)
-        self.player_match_df = self.player_match_df.fillna(0)
+def get_balls_faced(self, full_extra_df) :
+    """
+    Gets the runs faced by each batsman in each match.
+    
+    Arguments: 
+        full_extra_df: extra_df inner joined with delivery_df
+    """
+    total_balls_faced = self.delivery[["season", "match_number", "batter", "runs"]]\
+        .groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
+    total_balls_faced = total_balls_faced.rename(columns={"runs":"balls_faced"})
+    wides_faced = full_extra_df[["season", "match_number", "batter", "wides"]].loc[np.where(full_extra_df["wides"] > 0)]
+    noballs_faced = full_extra_df[["season", "match_number", "batter", "noballs"]].loc[np.where(full_extra_df["noballs"] > 0)]
+    
+    # Get counts for wides and noballs grouped by batter
+    total_wides_faced = wides_faced.groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
+    total_noballs_faced = noballs_faced.groupby(by=["season", "match_number", "batter"], sort=False, as_index=False).count()
+    total_balls_faced = total_balls_faced.merge(total_wides_faced, how="left", on=["season", "match_number", "batter"])
+    total_balls_faced = total_balls_faced.merge(total_noballs_faced, how="left", on=["season", "match_number", "batter"])
+    total_balls_faced = total_balls_faced.fillna(0)
+    total_balls_faced["balls_faced"] -= total_balls_faced["wides"] + total_balls_faced["noballs"]
+    total_balls_faced = total_balls_faced.drop(["wides", "noballs"], axis=1)
+    self.player_match = self.player_match.merge(total_balls_faced, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "batter"])
+    self.player_match = self.player_match.drop(["batter"], axis=1)
 
-        # Batting Position
-        delivery_df_chopped = self.delivery_df[["season", "match_number", "team_batting", "over", "number", "batter"]]
-        # need to account for non-striker b/c they could be run out first ball + other edge cases
-        delivery_df_chopped_ns = self.delivery_df[["season", "match_number", "team_batting", "over", "number", "non_striker"]]
-        delivery_df_chopped_ns = delivery_df_chopped_ns.rename(columns={"non_striker":"batter"})
-        delivery_df_chopped = pd.concat([delivery_df_chopped, delivery_df_chopped_ns], axis=0)
-        player_position = delivery_df_chopped.sort_index()[["season", "match_number", "team_batting", "batter"]].drop_duplicates()
-        player_position["position"] = player_position.groupby(by=["season", "match_number", "team_batting"]).cumcount()
-        player_position["position"] += 1 # not zero-indexed as a standard, unlike delivery
-        player_position = player_position.drop(["team_batting"], axis=1)
-        self.player_match_df = self.player_match_df.merge(player_position, 
-                                                how="left", left_on=["season", "match_number", "player_id"], 
-                                                right_on=["season", "match_number", "batter"])
-        self.player_match_df = self.player_match_df.drop(["batter"], axis=1)
 
+def get_num_wickets(self, full_wickets_df) :
+    """
+    Gets the number of wickets taken by each bowler in each match.
+    
+    Arguments: 
+        full_wickets_df: wicket_df inner joined with delivery_df
+    """
+    bowler_wickets = full_wickets_df.loc[np.where(full_wickets_df["type"] != "run out")]
+    wickets_taken = bowler_wickets[["season", "match_number", "bowler", "wickets"]]\
+        .groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
+    self.player_match = self.player_match.merge(wickets_taken, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "bowler"])
+    self.player_match = self.player_match.drop(["bowler"], axis=1)
+
+def get_batsman_out(self, full_wickets_df) :
+    """
+    Checks whether batsman was out in their innings.
+    
+    Arguments: 
+        full_wickets_df: wicket_df inner joined with delivery_df
+    """
+    batsman_out = full_wickets_df[["season", "match_number", "player_out", "wickets"]]\
+        .groupby(by=["season", "match_number", "player_out"], sort=False, as_index=False).count()
+    batsman_out = batsman_out.rename(columns={"wickets":"out"})
+    batsman_out["out"] = True
+    self.player_match = self.player_match.merge(batsman_out, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "player_out"])
+    self.player_match = self.player_match.drop(["player_out"], axis=1)
+    self.player_match["out"] = self.player_match["out"].fillna(False)
+    self.player_match = self.player_match.fillna(0)
+
+def get_batting_position(self) :
+    """Gets the batting position for each player in the match"""
+    delivery_df_chopped = self.delivery[["season", "match_number", "team_batting", "over", "number", "batter"]]
+    # need to account for non-striker b/c they could be run out first ball + other edge cases
+    delivery_df_chopped_ns = self.delivery[["season", "match_number", "team_batting", "over", "number", "non_striker"]]
+    delivery_df_chopped_ns = delivery_df_chopped_ns.rename(columns={"non_striker":"batter"})
+    delivery_df_chopped = pd.concat([delivery_df_chopped, delivery_df_chopped_ns], axis=0)
+    # sort_index puts the deliveries in order for each match, then cumcount() gets the position
+    # of each batter
+    player_position = delivery_df_chopped.sort_index()[["season", "match_number", "team_batting", "batter"]].drop_duplicates()
+    player_position["position"] = player_position.groupby(by=["season", "match_number", "team_batting"]).cumcount()
+    player_position["position"] += 1 # not zero-indexed as a standard, unlike delivery
+    player_position = player_position.drop(["team_batting"], axis=1)
+    self.player_match = self.player_match.merge(player_position, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "batter"])
+    self.player_match = self.player_match.drop(["batter"], axis=1)
+
+def get_extras_delivered(self, full_extra_df) :
+    """
+    Gets the number of wides and noballs delivered by each bowler in each match
+    
+    Arguments: 
+        full_extra_df: extra_df inner joined with delivery_df
+    """
+    total_balls_delivered = self.delivery[["season", "match_number", "bowler", "runs"]].groupby(by=["season", "match_number", "bowler"], 
+                                                                                                sort=False, as_index=False).count()
+    total_balls_delivered = total_balls_delivered.rename(columns={"runs":"balls_delivered"})
+    wides_delivered = full_extra_df[["season", "match_number", "bowler", "wides"]].loc[np.where(full_extra_df["wides"] > 0)]
+    noballs_delivered = full_extra_df[["season", "match_number", "bowler", "noballs"]].loc[np.where(full_extra_df["noballs"] > 0)]
+    total_wides_delivered = wides_delivered.groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
+    total_noballs_delivered = noballs_delivered.groupby(by=["season", "match_number", "bowler"], sort=False, as_index=False).count()
+    
+    total_balls_delivered = total_balls_delivered.merge(total_wides_delivered, 
+                                                        how="left", on=["season", "match_number", "bowler"])
+    total_balls_delivered = total_balls_delivered.merge(total_noballs_delivered, 
+                                                        how="left", on=["season", "match_number", "bowler"])
+    
+    total_balls_delivered = total_balls_delivered.fillna(0)
+    total_balls_delivered["balls_delivered"] -= total_balls_delivered["wides"] + total_balls_delivered["noballs"]
+    total_balls_delivered = total_balls_delivered.drop(["wides", "noballs"], axis=1)
+    self.player_match = self.player_match.merge(total_balls_delivered, 
+                                            how="left", left_on=["season", "match_number", "player_id"], 
+                                            right_on=["season", "match_number", "bowler"])
+    self.player_match = self.player_match.drop(["bowler"], axis=1)
