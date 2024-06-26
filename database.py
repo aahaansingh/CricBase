@@ -5,7 +5,7 @@ from CricBase import data_read
 import pandas as pd
 from pandas.io import sql
 
-class SQLdb :
+class CricDB :
     """An object for initializing a cricket database"""
 
     def __init__ (self, dbpath) :

@@ -315,12 +315,11 @@ def get_batsman_out(self, full_wickets_df) :
     batsman_out = full_wickets_df[["season", "match_number", "player_out", "wickets"]]\
         .groupby(by=["season", "match_number", "player_out"], sort=False, as_index=False).count()
     batsman_out = batsman_out.rename(columns={"wickets":"out"})
-    batsman_out["out"] = True
+    batsman_out["out"] = 1
     self.player_match = self.player_match.merge(batsman_out, 
                                             how="left", left_on=["season", "match_number", "player_id"], 
                                             right_on=["season", "match_number", "player_out"])
     self.player_match = self.player_match.drop(["player_out"], axis=1)
-    self.player_match["out"] = self.player_match["out"].fillna(False)
     self.player_match = self.player_match.fillna(0)
 
 def get_batting_position(self) :
