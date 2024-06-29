@@ -18,6 +18,16 @@ class DataRead :
         self.delivery, self.wickets, self.extras, self.fielder_wickets = self.delivery_data()
         self.player_scorecards()
 
+    
+    def to_csv(self, path: str) :
+        self.match.to_csv(os.path.join(path, 'match.csv'), index=False)
+        self.player.to_csv(os.path.join(path, 'player.csv'), index=False)
+        self.player_match.to_csv(os.path.join(path, 'player_match.csv'), index=False)
+        self.delivery.to_csv(os.path.join(path, 'delivery.csv'), index=False)
+        self.wickets.to_csv(os.path.join(path, 'wicket.csv'), index=False)
+        self.extras.to_csv(os.path.join(path, 'extra.csv'), index=False)
+        self.fielder_wickets.to_csv(os.path.join(path, 'fielder_wicket.csv'), index=False)
+
     def match_key(self, data) :
         """
         Helper function that gets the match number and season of a given scorecard file.
@@ -124,7 +134,9 @@ class DataRead :
             data = json.load(open(filename))
             season, match_number = self.match_key(data)
             registry = data["info"]["registry"]["people"]
-            for innings_data in data["innings"] :
+            for count, innings_data in enumerate(data["innings"]) :
+                if count > 1 : # excluding super over data bc I don't think it's needed here
+                    break
                 team_batting = innings_data["team"]
                 for over_data in innings_data["overs"] :
                     over = over_data["over"]

@@ -1,6 +1,4 @@
-import mysql.connector
 import sqlite3
-import os
 from CricBase import data_read
 import pandas as pd
 from pandas.io import sql
@@ -20,7 +18,10 @@ class CricDB :
 
     def create_db(self, path: str) :
         """
-        Creates the database at the specified location
+        Creates the database at the earlier specified location with data from the provided
+        path
+        Arguments:
+            path: the path from which to retrieve JSON data
         """
         cursor = self.connection.cursor()
         db = data_read.DataRead(path)
