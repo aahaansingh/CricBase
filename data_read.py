@@ -22,7 +22,13 @@ class DataRead :
     def to_csv(self, path: str) :
         self.match.to_csv(os.path.join(path, 'match.csv'), index=False)
         self.player.to_csv(os.path.join(path, 'player.csv'), index=False)
-        self.player_match.to_csv(os.path.join(path, 'player_match.csv'), index=False)
+        p_match = self.player_match.astype({'runs_scored':'int32', 'runs_conceded':'int32',
+                                                 'wides':'int32', 'noballs':'int32',
+                                                 'fours_scored':'int32', 'fours_conceded':'int32',
+                                                 'sixes_scored':'int32','sixes_conceded':'int32', 
+                                                 'balls_faced':'int32', 'balls_delivered':'int32',
+                                                 'wickets':'int32', 'out':'int32', 'position':'Int64'}, errors='ignore')
+        p_match.to_csv(os.path.join(path, 'player_match.csv'), index=False)
         self.delivery.to_csv(os.path.join(path, 'delivery.csv'), index=False)
         self.wickets.to_csv(os.path.join(path, 'wicket.csv'), index=False)
         self.extras.to_csv(os.path.join(path, 'extra.csv'), index=False)
@@ -54,7 +60,7 @@ class DataRead :
             match_df : The aforementioned Dataframe
         """
         match_data_array = []
-        match_attrs = ["season", "match_number", "city", "start_date", "winner", "batting_first", "chasing", "eliminator"]
+        match_attrs = ["season", "match_number", "city", "start_date", "winner", "batting_first", "chasing", "eliminator", "target_overs", "target_runs"]
         for filename in glob.glob(os.path.join(self.path, '*.json')):
             data = json.load(open(filename))
             city = None
@@ -75,8 +81,10 @@ class DataRead :
                 eliminator = data["info"]["outcome"]["eliminator"]
 
             match_data_list = [season, match_number, city,
-                    start_date, winner, data["info"]["teams"][0],
-                    data["info"]["teams"][1], eliminator]
+                    start_date, winner, (data["innings"][0]["team"] if len(data["innings"]) > 0 else None),
+                    (data["innings"][1]["team"] if len(data["innings"]) > 1 else None), eliminator,
+                    (data["innings"][1]["target"]["overs"] if len(data["innings"]) > 1 else None),
+                    (data["innings"][1]["target"]["runs"] if len(data["innings"]) > 1 else None)]
             match_data_array.append(match_data_list)
         match_df = pd.DataFrame(match_data_array, columns=match_attrs)
         return match_df
